@@ -52,3 +52,6 @@ app_result update(app, app_action);
 } // namespace todo
 
 LAGER_STRUCT(todo, app, doc, path);
+LAGER_STRUCT(todo, save_action, file);
+LAGER_STRUCT(todo, load_action, file);
+LAGER_STRUCT(todo, load_result_action, file, doc);

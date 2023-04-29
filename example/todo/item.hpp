@@ -13,6 +13,7 @@
 #pragma once
 
 #include <lager/extra/struct.hpp>
+#include <lager/util.hpp>
 
 #include <string>
 #include <variant>
@@ -36,3 +37,5 @@ item update(item m, item_action a);
 } // namespace todo
 
 LAGER_STRUCT(todo, item, done, text);
+LAGER_STRUCT(todo, toggle_item_action);
+LAGER_STRUCT(todo, remove_item_action);

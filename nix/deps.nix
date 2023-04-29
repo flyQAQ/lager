@@ -6,12 +6,12 @@ rec {
   cereal = stdenv.mkDerivation rec {
     name = "cereal-${version}";
     version = "git-arximboldi-${commit}";
-    commit = "4bfaf5fee1cbc69db4614169092368a29c7607c4";
+    commit = "2fe15c57f813db1b14c9b5e3e2389f7c5d1c5aff";
     src = fetchFromGitHub {
-      owner = "arximboldi";
+      owner = "flyqaq";
       repo = "cereal";
       rev = commit;
-      sha256 = "17gwhwhih4737wzm24c45y3ch69jzw2mi8prj1pdlxff8f1pki8v";
+      sha256 = "119sldlzkrpnbb0kg052b851kifc7hwnc5vik1fdklramx5gzy97";
     };
     nativeBuildInputs = [ cmake ];
     cmakeFlags="-DJUST_INSTALL_CEREAL=true";
@@ -62,19 +62,19 @@ rec {
   imgui = stdenv.mkDerivation rec {
     name = "imgui-${version}";
     version = "git-${commit}";
-    commit = "6ffee0e75e8f677c5fd8280dfe544c3fcb325f45";
+    commit = "1ebb91382757777382b3629ced2a573996e46453";
     src = fetchFromGitHub {
       owner = "ocornut";
       repo = "imgui";
       rev = commit;
-      sha256 = "0z84phn3d71gsawmynxj1l32fxq73706z65iqp1sx7i1qpnyz43a";
+      sha256 = "0zz4pb61dvrdlb7cmlfqid7m8jc583cipspg9dyj39w16h4z9bhx";
     };
     buildPhase = "";
     installPhase = ''
       mkdir $out
       cp $src/*.h $out/
       cp $src/*.cpp $out/
-      cp $src/examples/imgui_impl_* $out/
+      cp $src/backends/imgui_impl_* $out/
     '';
     meta = with lib; {
       description = "Immediate mode UI library";

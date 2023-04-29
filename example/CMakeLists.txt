@@ -149,42 +149,30 @@ endif()
 # ImGui examples
 # ==============
 
-set(OpenGL_GL_PREFERENCE GLVND)
-find_package(OpenGL)
-
 set(imgui_source_dir "$ENV{IMGUI_SOURCE_DIR}")
 
 set(imgui_sources
   "${imgui_source_dir}/imgui.cpp"
   "${imgui_source_dir}/imgui_draw.cpp"
+  "${imgui_source_dir}/imgui_tables.cpp"
   "${imgui_source_dir}/imgui_widgets.cpp"
-  "${imgui_source_dir}/imgui_impl_sdl.cpp"
-  "${imgui_source_dir}/imgui_impl_opengl3.cpp")
+  "${imgui_source_dir}/imgui_impl_sdl2.cpp"
+  "${imgui_source_dir}/imgui_impl_sdlrenderer.cpp")
 
-find_program(EMXX em++)
-
-if (EMXX AND OPENGL_FOUND AND SDL2_FOUND AND EXISTS "${imgui_source_dir}/imgui.h")
-  message(STATUS "ImGui found in ${imgui_source_dir}")
-
-  set(extra_emcc_flags $ENV{NIX_CFLAGS_COMPILE})
-  separate_arguments(extra_emcc_flags)
-
-  add_custom_target(todo-imgui
-    COMMAND ${EMXX} ${extra_emcc_flags}
-      -Os
-      -std=c++17 -I ${CMAKE_SOURCE_DIR}
-      -I ${imgui_source_dir}
-      ${imgui_sources}
-      ${CMAKE_CURRENT_SOURCE_DIR}/todo/item.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/todo/model.cpp
-      ${CMAKE_CURRENT_SOURCE_DIR}/todo/imgui/main.cpp
-      -s USE_SDL=2 -s USE_WEBGL2=1 -s WASM=1 -s FULL_ES3=1
-      -s ALLOW_MEMORY_GROWTH=1
-      --emrun
-      --shell-file ${CMAKE_SOURCE_DIR}/resources/emscripten_shell_minimal.html
-      -o ${CMAKE_CURRENT_BINARY_DIR}/todo-imgui.html
-    COMMENT "Build todo-imgui emscripten example")
-  add_dependencies(examples todo-imgui)
-else()
-  message(STATUS "Disabling ImGui based examples")
+if (SDL2_FOUND AND EXISTS "${imgui_source_dir}/imgui.h")
+  add_executable(todo-imgui-sdl2 EXCLUDE_FROM_ALL 
+    ${imgui_sources}
+    ${CMAKE_CURRENT_SOURCE_DIR}/todo/item.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/todo/model.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/todo/imgui/main.cpp)
+  target_compile_definitions(todo-imgui-sdl2 PUBLIC DEBUGGER)
+  target_include_directories(todo-imgui-sdl2 PRIVATE 
+    ${CMAKE_SOURCE_DIR} 
+    ${imgui_source_dir}
+    ${SDL2_INCLUDE_DIR})
+  target_link_libraries(todo-imgui-sdl2 PRIVATE
+    lager-debugger-example
+    ${OPENGL_LIBRARIES}
+    ${SDL2_LIBRARY})
+  add_dependencies(examples todo-imgui-sdl2)
 endif()

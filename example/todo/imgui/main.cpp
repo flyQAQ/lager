@@ -12,12 +12,19 @@
 
 #include "../model.hpp"
 
+#include <lager/debug/debugger.hpp>
+#include <lager/debug/http_server.hpp>
 #include <lager/event_loop/sdl.hpp>
 #include <lager/store.hpp>
+#include <lager/resources_path.hpp>
+
+#include <zug/compose.hpp>
+
+#include <cereal/types/complex.hpp>
 
 #include <imgui.h>
-#include <imgui_impl_opengl3.h>
-#include <imgui_impl_sdl.h>
+#include <imgui_impl_sdlrenderer.h>
+#include <imgui_impl_sdl2.h>
 
 #include <SDL.h>
 #include <SDL_opengl.h>
@@ -37,15 +44,28 @@ struct ui_state
     std::array<char, input_string_size> new_todo_input{'\0'};
 };
 
+void line()
+{
+	ImVec2 mi = ImGui::GetItemRectMin();
+	ImVec2 ma = ImGui::GetItemRectMax();
+
+	mi.y = ma.y;
+
+	ImGui::GetWindowDrawList()->AddLine(mi, ma, 0x5a, 1.0f);
+}
+
 void draw(lager::context<todo::item_action> ctx, const todo::item& i)
 {
     auto checked = i.done;
-    if (ImGui::Checkbox("", &checked)) {
+    if (ImGui::Checkbox("##checked", &checked)) {
         ctx.dispatch(todo::toggle_item_action{});
     }
 
     ImGui::SameLine();
     ImGui::Text("%s", i.text.c_str());
+    if (i.done) {
+        line();
+    }
 
     ImGui::SameLine();
     if (ImGui::Button("Delete")) {
@@ -78,7 +98,7 @@ void draw(lager::context<todo::model_action> ctx,
     if (ImGui::IsWindowAppearing())
         ImGui::SetKeyboardFocusHere();
     ImGui::PushItemWidth(-0.1f);
-    if (ImGui::InputTextWithHint("",
+    if (ImGui::InputTextWithHint("##input",
                                  "What do you want to do today?",
                                  s.new_todo_input.data(),
                                  s.input_string_size,
@@ -90,7 +110,7 @@ void draw(lager::context<todo::model_action> ctx,
     ImGui::PopItemWidth();
     ImGui::Separator();
 
-    ImGui::BeginChild("");
+    ImGui::BeginChild("##child");
     {
         auto idx = std::size_t{};
         for (auto item : m.todos) {
@@ -106,42 +126,26 @@ void draw(lager::context<todo::model_action> ctx,
     ImGui::End();
 }
 
-int main()
+int main(int argc, const char *argv[])
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         std::cerr << "Error initializing SDL: " << SDL_GetError() << std::endl;
         return -1;
     }
 
-    const char* glsl_version = "#version 300 es";
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-
-    auto current = SDL_DisplayMode{};
-    SDL_GetCurrentDisplayMode(0, &current);
-    auto window =
-        SDL_CreateWindow("Todo Imgui",
-                         SDL_WINDOWPOS_CENTERED,
-                         SDL_WINDOWPOS_CENTERED,
-                         window_width,
-                         window_height,
-                         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE |
-                             SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_SHOWN);
+    // Create window with SDL_Renderer graphics context
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    SDL_Window* window = SDL_CreateWindow("Todo ImGui", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
     if (!window) {
         std::cerr << "Error creating SDL window: " << SDL_GetError()
                   << std::endl;
         return -1;
     }
 
-    auto gl_context = SDL_GL_CreateContext(window);
-    if (!gl_context) {
-        std::cerr << "Error creating GL context: " << SDL_GetError()
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0);
+    if (renderer == nullptr)
+    {
+        std::cerr << "Error creating SDL renderer: " << SDL_GetError()
                   << std::endl;
         return -1;
     }
@@ -154,12 +158,25 @@ int main()
 
     ImGui::StyleColorsDark();
 
-    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
-    ImGui_ImplOpenGL3_Init(glsl_version);
+    ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
+    ImGui_ImplSDLRenderer_Init(renderer);
 
+    auto clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+
+#ifdef DEBUGGER
+    auto debugger =
+        lager::http_debug_server{argc, argv, 8080, lager::resources_path()};
+#endif
     auto loop  = lager::sdl_event_loop{};
     auto store = lager::make_store<todo::model_action>(
-        todo::model{}, lager::with_sdl_event_loop{loop});
+        todo::model{}, lager::with_sdl_event_loop{loop},
+        zug::comp(
+#ifdef DEBUGGER
+            lager::with_debugger(debugger),
+#endif
+            lager::identity
+        )
+    );
     auto state = ui_state{};
 
     loop.run(
@@ -168,27 +185,25 @@ int main()
             return ev.type != SDL_QUIT;
         },
         [&](auto dt) {
-            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplSDLRenderer_NewFrame();
             ImGui_ImplSDL2_NewFrame(window);
             ImGui::NewFrame();
             {
                 draw(store, store.get(), state);
             }
             ImGui::Render();
-            SDL_GL_MakeCurrent(window, gl_context);
-            auto size = ImGui::GetIO().DisplaySize;
-            glViewport(0, 0, (int) size.x, (int) size.y);
-            glClearColor(0, 0, 0, 1);
-            glClear(GL_COLOR_BUFFER_BIT);
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-            SDL_GL_SwapWindow(window);
+            SDL_RenderSetScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+            SDL_SetRenderDrawColor(renderer, (Uint8)(clear_color.x * 255), (Uint8)(clear_color.y * 255), (Uint8)(clear_color.z * 255), (Uint8)(clear_color.w * 255));
+            SDL_RenderClear(renderer);
+            ImGui_ImplSDLRenderer_RenderDrawData(ImGui::GetDrawData());
+            SDL_RenderPresent(renderer);
         });
 
-    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDLRenderer_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
 
-    SDL_GL_DeleteContext(gl_context);
+    SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
 

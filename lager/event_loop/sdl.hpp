@@ -154,7 +154,7 @@ struct sdl_event_loop
                     continue_ = continue_ && (paused_ || handler(event));
                 }
             }
-            continue_ = continue_ && (paused_ || tick(step()));
+            tick(step());
         }
     }
 #endif // !__EMSCRIPTEN__

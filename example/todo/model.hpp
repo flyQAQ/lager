@@ -15,7 +15,9 @@
 #include "item.hpp"
 
 #include <filesystem>
-#include <immer/flex_vector.hpp>
+#include <lager/extra/cereal/immer_flex_vector.hpp>
+
+#include <cereal/types/pair.hpp>
 
 namespace todo {
 
@@ -39,3 +41,4 @@ model load(const std::string& fname);
 } // namespace todo
 
 LAGER_STRUCT(todo, model, todos);
+LAGER_STRUCT(todo, add_todo_action, text);

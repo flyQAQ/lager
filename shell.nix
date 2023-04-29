@@ -72,6 +72,7 @@ theStdenv.mkDerivation rec {
     old-nixpkgs.elmPackages.elm-package
   ];
   shellHook = ''
+    export QT_XCB_GL_INTEGRATION=none
     export LAGER_ROOT=`dirname ${toString ./shell.nix}`
     export LAGER_RESOURCES_PATH="$LAGER_ROOT"/resources
     addToSearchPath PATH "$LAGER_ROOT/build"
