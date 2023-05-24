@@ -17,16 +17,17 @@ import Html.Keyed as Keyed
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
+import Browser
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Time exposing (Time)
-import Keyboard.Combo as Keys
+import Time
+import JsonTree exposing(defaultColors)
 
 type alias Flags = {
     server : String
     }
 
-main = Html.programWithFlags
+main = Browser.element
        { init = init
        , view = view
        , update = update
@@ -57,20 +58,25 @@ type Detail
     | LoadingStep Int
     | NoStep
 
+type alias TreeState = {
+      actionTreeState: JsonTree.State
+    , modelTreeState: JsonTree.State
+    }
+
 type alias Model =
     { server: String
     , status: Status
     , detail: Detail
-    , keys: Keys.Model Msg
+    , state : TreeState
     }
 
 initStatus = Status "" 0 0 False
-initModel server = Model server initStatus NoStep (Keys.init keys ComboMsg)
+initModel server = Model server initStatus NoStep (TreeState JsonTree.defaultState JsonTree.defaultState)
 
 init : Flags -> (Model, Cmd Msg)
 init flags = let model = initModel flags.server
                  cmd   = queryStatus flags.server
-             in (model, cmd)
+        in (model, cmd)
 
 detailIndex : Detail -> Int
 detailIndex d =
@@ -110,8 +116,13 @@ type Msg = RecvStatus (Result Http.Error Status)
          | KeyDown
          | KeyGoUp
          | KeyGoDown
-         | Tick Time
-         | ComboMsg Keys.Msg
+         | Tick Time.Posix
+         | SetActionViewState JsonTree.State
+         | SetModelViewState JsonTree.State
+         | Selected JsonTree.KeyPath
+
+setState : Model -> JsonTree.State -> JsonTree.State -> Model
+setState model action mod = {model | state = {actionTreeState = action, modelTreeState = mod}}
 
 selectStep : Model -> Int -> (Model, Cmd Msg)
 selectStep model index =
@@ -144,19 +155,20 @@ update msg model =
                 then selectStep newModel status.cursor
                 else (newModel, title <| "debugging: " ++ status.program)
         RecvStatus (Err err) ->
-            Debug.log ("RecvStatus Err: " ++ toString err)
+            Debug.log ("RecvStatus Err:")
                 (model, Cmd.none)
         RecvStep (Ok detail) ->
             if detailIndex detail == detailIndex model.detail
-            then ({model | detail = detail}, Cmd.none)
+            then let newModel = {model | detail = detail}
+                 in (setState newModel JsonTree.defaultState JsonTree.defaultState, Cmd.none)
             else (model, Cmd.none)
         RecvStep (Err err) ->
-            Debug.log ("RecvStep Err: " ++ toString err)
+            Debug.log ("RecvStep Err:")
                 (model, Cmd.none)
         RecvPost (Ok _) ->
-            (model, Cmd.none)
+            (setState model JsonTree.defaultState JsonTree.defaultState, Cmd.none)
         RecvPost (Err err) ->
-            (model, Cmd.none)
+            (setState model JsonTree.defaultState JsonTree.defaultState, Cmd.none)
         SelectStep index ->
             selectStep model index
         GotoStep index ->
@@ -181,11 +193,14 @@ update msg model =
             selectGotoStep model (detailIndex model.detail - 1)
         KeyGoDown ->
             selectGotoStep model (detailIndex model.detail + 1)
-        ComboMsg msg ->
-            let (keys, cmd) = Keys.update msg model.keys
-            in ({ model | keys = keys }, cmd)
         Tick t ->
             (model, queryStatus model.server)
+        SetActionViewState state ->
+            (setState model state model.state.modelTreeState, Cmd.none)
+        SetModelViewState state ->
+            (setState model model.state.actionTreeState state, Cmd.none)
+        Selected path ->
+            (model, Cmd.none)
 
 --
 -- view
@@ -204,7 +219,7 @@ viewHeader model =
               [ div [class "block tt hl"] [text model.status.program]
               , div [class "block"] [text model.server]
               , div [class "block"]
-                  [ span [class "hl"] [text <| (toString model.status.summary)]
+                  [ span [class "hl"] [text <| (String.fromInt model.status.summary)]
                   , text " steps" ] -- ⸽
               ]
         , div [ class "right-side" ]
@@ -235,25 +250,50 @@ viewRedoButton status =
 
 viewNoStep  = div [class "info"] [text "No step selected"]
 viewLoading = div [class "info"] [text "Loading..."]
-viewStep step =
+
+viewJson : Decode.Value -> JsonTree.State -> (JsonTree.State -> Msg) -> Html Msg
+viewJson json state msg = 
+    let encode = Encode.encode 4
+        parseResult = JsonTree.parseString (encode json)
+        config allowSelection =
+            { colors = defaultColors
+            , onSelect =
+                if allowSelection then
+                    Just Selected
+                else
+                    Nothing
+            , toMsg = msg
+            }
+    in
+    div []
+        [
+        case parseResult of
+            Ok rootNode ->
+                JsonTree.view rootNode (config False) state
+            Err e ->
+                pre [class "code"] [text <| encode json]
+        ]
+
+viewStep : Model -> Step -> Html Msg
+viewStep model step =
     let encode = Encode.encode 4
     in div [] <|
         case step.action of
             Just action ->
                 [ div [class "info"] [text "action"]
-                , pre [class "code"] [text <| encode action]
+                , viewJson action model.state.actionTreeState SetActionViewState
                 , div [class "info"] [text "model"]
-                , pre [class "code"] [text <| encode step.model]]
+                , viewJson step.model model.state.modelTreeState SetModelViewState]
             Nothing ->
                 [ div [class "info"] [text "initial model" ]
-                , pre [class "code"] [text <| encode step.model]]
+                , viewJson step.model model.state.modelTreeState SetModelViewState]
 
 viewDetail : Model -> Html Msg
 viewDetail model =
     div [ class "detail" ] <|
         case model.detail of
-            LoadedStep idx s   -> [viewStep s]
-            ChangingStep idx s -> [viewStep s]
+            LoadedStep idx s   -> [viewStep model s]
+            ChangingStep idx s -> [viewStep model s]
             LoadingStep idx    -> [viewLoading]
             NoStep             -> [viewNoStep]
 
@@ -265,14 +305,14 @@ viewHistoryItem cursor selected idx =
         , onClick (SelectStep idx)
         , onDoubleClick (GotoStep idx)
         ]
-        [div [] [text (toString idx)]]
+        [div [] [text (String.fromInt idx)]]
 
 viewHistory : Model -> Html Msg
 viewHistory model =
     let selected = detailIndex model.detail
         selectors = List.range 0 model.status.summary
                   |> List.map (\idx ->
-                                  ( toString idx
+                                  ( String.fromInt idx
                                   , viewHistoryItem
                                         model.status.cursor
                                         selected idx ))
@@ -292,21 +332,8 @@ view model =
 -- subs
 --
 
-keys = [ Keys.combo2 (Keys.control, Keys.z) Undo
-       , Keys.combo2 (Keys.control, Keys.y) Redo
-       , Keys.combo2 (Keys.shift, Keys.up) KeyGoUp
-       , Keys.combo2 (Keys.shift, Keys.down) KeyGoDown
-       , Keys.combo1 Keys.up KeyUp
-       , Keys.combo1 Keys.down KeyDown
-       , Keys.combo1 Keys.space TogglePause
-       ]
-
 subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.batch
-        [ Time.every (200 * Time.millisecond) Tick
-        , Keys.subscriptions model.keys
-        ]
+subscriptions model = Time.every 1000 Tick
 
 --
 -- server communication
@@ -319,14 +346,14 @@ queryStatus server =
 
 queryStep : String -> Int -> Cmd Msg
 queryStep server index =
-    let url = server ++ "/api/step/" ++ toString index
+    let url = server ++ "/api/step/" ++ String.fromInt index
     in Http.send RecvStep <|
         Http.get url <|
             Decode.map (LoadedStep index) decodeStep
 
 queryGoto : String -> Int -> Cmd Msg
 queryGoto server index =
-    let url = server ++ "/api/goto/" ++ toString index
+    let url = server ++ "/api/goto/" ++ String.fromInt index
     in Http.send RecvPost (Http.post url Http.emptyBody (Decode.succeed ()))
 
 queryUndo : String -> Cmd Msg

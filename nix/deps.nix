@@ -81,4 +81,26 @@ rec {
       license = licenses.lgpl3;
     };
   };
+
+  elm = stdenv.mkDerivation rec {
+    name = "elm-${version}";
+    version = "0.19.1";
+    src = fetchurl {
+      url = "https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz";
+      sha256 = "0p0m1xn4s4rk73q19fz1bw8qwhm6j3cqkrbq6jbmlwkzn8mzajp4";
+    };
+    nativeBuildInputs = [
+      autoPatchelfHook
+    ];
+    unpackPhase = ''
+      gunzip -c ${src} > elm
+    '';
+    installPhase = ''
+      install -m755 -D elm $out/bin/elm
+    '';
+    meta = with lib; {
+      homepage = "https://elm-lang.org";
+      description = "A delightful language for reliable web applications";
+    };
+  };
 }

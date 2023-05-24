@@ -8,12 +8,17 @@
     <link rel="stylesheet" type="text/css" href="gui.css">
   </head>
 
-  <body></body>
+  <body id="elm-app"></body>
 
   <script type="text/javascript">
-   var app = Elm.Main.fullscreen({ server: window.location.origin });
-   app.ports.title.subscribe(function(title) {
-       document.title = title;
-   });
+    app = Elm.Main.init({
+      node: document.getElementById("elm-app"),
+      flags: {
+        server: window.location.origin
+      }
+    })
+    app.ports.title.subscribe(function(title) {
+        document.title = title;
+    });
   </script>
 </html>

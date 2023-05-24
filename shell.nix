@@ -67,9 +67,7 @@ theStdenv.mkDerivation rec {
       docs.recommonmark
       ]))
     old-nixpkgs.sass
-    old-nixpkgs.elmPackages.elm-reactor
-    old-nixpkgs.elmPackages.elm-make
-    old-nixpkgs.elmPackages.elm-package
+    deps.elm
   ];
   shellHook = ''
     export QT_XCB_GL_INTEGRATION=none
